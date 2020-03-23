@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Test</title>
+</head>
+<body>
+    <input type="file" id="fileUpload" multiple>
+    <button id="submitBtn">upload</button>
+</body>
+    <script>
+        let btn = document.getElementById('submitBtn')
+        btn.onclick = function(e) {
+            let files = document.getElementById('fileUpload').files
+            for (let i = 0; i < files.length; i++) {
+                uploadFile(files[i])
+            }
+        }
+
+        function uploadFile(file) {
+             let uuid = Math.random().toString().substring(2)
+             let chunks = fileSlice(file)
+             uploadSlice(chunks, file, uuid)
+        }
+
+        const sliceLenght = 1024*1024
+        // 将文件切割放在数组里
+        function fileSlice(file) {
+            let fileSize = file.size
+            let start  = 0, end = 0
+            let chunkArr = []
+            while(end < fileSize) {
+                end += sliceLenght
+                let chunk = file.slice(start, end)
+                chunkArr.push(chunk)
+                start += sliceLenght
+            }
+            return chunkArr
+        }
+
+        const maxUpload = 5 // 最大http上传数量，如果文件过大，分割成数百个文件，也不能一下子全发起请求
+        function uploadSlice(chunks, file, uuid) {
+            let len = chunks.length
+            let curRun = 0, succCnt = 0
+            function upload(index) {
+                if(index >= len) return
+                let fd = new FormData()
+                fd.append(`file`, chunks[index])
+                fd.append(`fileName`, file.name)
+                fd.append(`index`, index)
+                fd.append(`uuid`, uuid)
+                fetch('http://localhost:8081/upload', {
+                    method: 'post',
+                    body: fd
+                    // 注意此处不要多此一举加 content-type multipart/form-data， 如果加了，boundary就搞没了，后端无法解析
+                }).then(r => {
+                    console.log(r)
+                    upload(curRun++)
+                    succCnt++
+                    if(succCnt >= len) merge()
+                })
+            }
+            for(let i = 0; i < maxUpload; i++) upload(curRun++)
+
+            // 上传完成后在请求后端合并
+            function merge() {
+                let fd = new FormData()
+                fd.append(`uuid`, uuid)
+                fd.append(`count`, len)
+                fd.append(`fileName`, file.name)
+                fetch('http://localhost:8081/merge', {
+                    method: 'post',
+                    body: fd
+                }).then(r => {
+                    console.log(r)
+                    console.log('merge success')
+                })
+            }
+        }
+    </script>
+</html>
